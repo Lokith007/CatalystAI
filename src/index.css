@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased scroll-smooth;
+  }
+  body {
+    @apply bg-void text-zinc-100 min-h-screen;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-neon-blue via-neon-purple to-neon-violet;
+  }
+  .border-gradient {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(#12121a, #12121a) padding-box,
+      linear-gradient(135deg, rgba(0, 212, 255, 0.4), rgba(168, 85, 247, 0.35), rgba(251, 146, 60, 0.25))
+        border-box;
+  }
+  .glass {
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] shadow-glass;
+  }
+  .glass-strong {
+    @apply bg-white/[0.07] backdrop-blur-2xl border border-white/10 shadow-glass;
+  }
+}
+
+/* Plotly overrides for dark theme */
+.js-plotly-plot .plotly .modebar {
+  @apply !bg-ink/90 !rounded-lg !border !border-white/10;
+}
