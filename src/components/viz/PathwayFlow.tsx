@@ -1,21 +1,51 @@
 import { motion } from "framer-motion";
+import { useMemo } from "react";
 
-const nodes = [
-  { id: "n1", label: "Feed", x: 6, y: 42 },
-  { id: "n2", label: "Activation", x: 28, y: 22 },
-  { id: "n3", label: "C–C build", x: 52, y: 48 },
-  { id: "n4", label: "Oxygenate cut", x: 74, y: 28 },
-  { id: "n5", label: "Jet cut", x: 92, y: 44 },
-];
+interface PathwayFlowProps {
+  seed?: number;
+  steps?: { label: string; energy: number }[];
+}
 
-const edges = [
-  { from: "n1", to: "n2" },
-  { from: "n2", to: "n3" },
-  { from: "n3", to: "n4" },
-  { from: "n4", to: "n5" },
-];
+export function PathwayFlow({ seed = 0, steps }: PathwayFlowProps) {
+  const { nodes, edges } = useMemo(() => {
+    // Generate pseudo-random perturbation based on seed
+    const rand = (i: number) => {
+      const x = Math.sin(seed * 9999 + i * 777) * 10000;
+      return x - Math.floor(x);
+    };
 
-export function PathwayFlow() {
+    const baseNodes = steps && steps.length > 0 
+      ? steps.map((s, i) => ({
+          id: `n${i}`,
+          label: s.label,
+          // distribute evenly across x axis
+          x: 10 + (80 / Math.max(1, steps.length - 1)) * i,
+          // energy loosely translates to y axis, but just make it wavy if no steps
+          y: 30 + ((i % 2 === 0) ? 10 : -10)
+        }))
+      : [
+          { id: "n1", label: "Feed", x: 6, y: 42 },
+          { id: "n2", label: "Activation", x: 28, y: 22 },
+          { id: "n3", label: "C–C build", x: 52, y: 48 },
+          { id: "n4", label: "Oxygenate cut", x: 74, y: 28 },
+          { id: "n5", label: "Jet cut", x: 92, y: 44 },
+        ];
+
+    const finalNodes = baseNodes.map((n, i) => {
+      // Perturb positions slightly if it's not the first or last node
+      const dx = (i > 0 && i < baseNodes.length - 1) ? (rand(i * 5) - 0.5) * 8 : 0;
+      const dy = (i > 0 && i < baseNodes.length - 1) ? (rand(i * 5 + 1) - 0.5) * 15 : 0;
+      return { ...n, x: Math.max(5, Math.min(95, n.x + dx)), y: Math.max(10, Math.min(50, n.y + dy)) };
+    });
+
+    const finalEdges = [];
+    for (let i = 0; i < finalNodes.length - 1; i++) {
+      finalEdges.push({ from: finalNodes[i].id, to: finalNodes[i+1].id });
+    }
+
+    return { nodes: finalNodes, edges: finalEdges };
+  }, [seed, steps]);
+
   return (
     <div className="relative h-[180px] w-full overflow-hidden rounded-xl border border-white/10 bg-ink/50">
       <svg
@@ -34,7 +64,7 @@ export function PathwayFlow() {
           const b = nodes.find((n) => n.id === e.to)!;
           return (
             <motion.line
-              key={`${e.from}-${e.to}`}
+              key={`${e.from}-${e.to}-${seed}`} // force re-animate on seed change
               x1={a.x}
               y1={a.y}
               x2={b.x}
@@ -49,7 +79,7 @@ export function PathwayFlow() {
           );
         })}
         {nodes.map((n, i) => (
-          <g key={n.id}>
+          <g key={`${n.id}-${seed}`}>
             <motion.circle
               cx={n.x}
               cy={n.y}
@@ -75,7 +105,7 @@ export function PathwayFlow() {
               y={n.y + 8}
               textAnchor="middle"
               fill="#a1a1aa"
-              fontSize="3.2"
+              fontSize="2.8"
               fontFamily="Inter, sans-serif"
             >
               {n.label}

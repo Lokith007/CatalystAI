@@ -4,6 +4,7 @@ import { ParetoChart } from "../components/charts/ParetoChart";
 import { ReactionEnergyChart } from "../components/charts/ReactionEnergyChart";
 import { MoleculeViewer } from "../components/viz/MoleculeViewer";
 import { PathwayFlow } from "../components/viz/PathwayFlow";
+import { useEffect } from "react";
 import { GlassCard } from "../components/ui/GlassCard";
 import { MetricBar } from "../components/ui/MetricBar";
 import { NeonButton } from "../components/ui/NeonButton";
@@ -51,6 +52,38 @@ export function DiscoveryDashboard() {
   const [sortKey, setSortKey] = useState<"yield" | "cost" | "stability">(
     "yield"
   );
+  const [selectedCatalystId, setSelectedCatalystId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (result) {
+      if (tab === "known" && result.known.length > 0) {
+        setSelectedCatalystId(result.known[0].id);
+      } else if (tab === "ai" && result.candidates.length > 0) {
+        setSelectedCatalystId(result.candidates[0].id);
+      } else {
+        setSelectedCatalystId(null);
+      }
+    }
+  }, [result, tab]);
+
+  const selectedSeed = useMemo(() => {
+    if (!selectedCatalystId) return 0;
+    let hash = 0;
+    for (let i = 0; i < selectedCatalystId.length; i++) {
+      hash = selectedCatalystId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash);
+  }, [selectedCatalystId]);
+
+  const dynamicPathwaySteps = useMemo(() => {
+    if (!result?.pathwaySteps) return [];
+    if (!selectedCatalystId) return result.pathwaySteps;
+    // Add a slight perturbation based on the selected catalyst
+    return result.pathwaySteps.map((step, i) => {
+      const noise = i > 0 && i < result.pathwaySteps.length - 1 ? (selectedSeed % (i * 3 + 5)) - 2 : 0;
+      return { ...step, energy: step.energy + noise };
+    });
+  }, [result, selectedCatalystId, selectedSeed]);
 
   const sortedPareto = useMemo(() => {
     if (!result) return [];
@@ -269,7 +302,12 @@ export function DiscoveryDashboard() {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.04 * i }}
-                    className="rounded-xl border border-white/10 bg-white/[0.03] p-4"
+                    onClick={() => setSelectedCatalystId(k.id)}
+                    className={`cursor-pointer rounded-xl border p-4 transition-all ${
+                      selectedCatalystId === k.id
+                        ? "border-neon-blue/60 bg-neon-blue/10 shadow-[0_0_15px_rgba(0,212,255,0.15)]"
+                        : "border-white/10 bg-white/[0.03] hover:border-white/30"
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -305,7 +343,12 @@ export function DiscoveryDashboard() {
                     initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.05 * i }}
-                    className="rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-transparent p-4"
+                    onClick={() => setSelectedCatalystId(c.id)}
+                    className={`cursor-pointer rounded-xl border p-4 transition-all bg-gradient-to-br from-white/[0.04] to-transparent ${
+                      selectedCatalystId === c.id
+                        ? "border-neon-purple/60 bg-neon-purple/10 shadow-[0_0_15px_rgba(168,85,247,0.15)]"
+                        : "border-white/10 hover:border-white/30"
+                    }`}
                   >
                     <div className="flex gap-4">
                       <StructurePreview seed={i * 47 + c.name.length} />
@@ -445,13 +488,13 @@ export function DiscoveryDashboard() {
             Structure, energetics, and pathway topology (mock).
           </p>
         </div>
-        <MoleculeViewer />
+        <MoleculeViewer seed={selectedSeed} />
         <div>
           <p className="mb-2 text-xs font-medium text-zinc-400">
             Reaction energy diagram
           </p>
           {result ? (
-            <ReactionEnergyChart steps={result.pathwaySteps} />
+            <ReactionEnergyChart steps={dynamicPathwaySteps} />
           ) : (
             <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 text-xs text-zinc-500">
               Run discovery to synthesize a pathway profile.
@@ -462,7 +505,7 @@ export function DiscoveryDashboard() {
           <p className="mb-2 text-xs font-medium text-zinc-400">
             Pathway flow
           </p>
-          <PathwayFlow />
+          <PathwayFlow seed={selectedSeed} steps={dynamicPathwaySteps} />
         </div>
       </GlassCard>
     </div>

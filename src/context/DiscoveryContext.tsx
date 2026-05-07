@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { simulateDiscovery } from "../api/simulateDiscovery";
+import { startDiscoveryRun, pollRunStatus } from "../api/simulateDiscovery";
 import type {
   DiscoveryInput,
   DiscoveryResult,
@@ -61,13 +61,14 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
     setPipelineStep("retrieval");
     setLastFeedbackDelta(null);
     try {
-      const res = await simulateDiscovery(input, (step) => {
+      const runId = await startDiscoveryRun(input);
+      const res = await pollRunStatus(runId, (step) => {
         if (step === "complete") {
           setPipelineStep("idle");
         } else {
           setPipelineStep(step);
         }
-      });
+      }, input);
       setResult(res);
     } finally {
       setIsRunning(false);
@@ -76,13 +77,28 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
   }, [input]);
 
   const submitFeedback = useCallback(
-    (payload: {
+    async (payload: {
       candidateId: string;
       actualYield: number;
       actualSelectivity: number;
       actualStability: number;
     }) => {
-      void payload;
+      const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+      try {
+        const res = await fetch(`${API}/api/experiments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+             candidate_id: payload.candidateId,
+             actual_yield: payload.actualYield,
+             actual_selectivity: payload.actualSelectivity,
+             actual_stability: payload.actualStability,
+          }),
+        });
+        if (!res.ok) throw new Error("API failed");
+      } catch (e) {
+        console.warn("Backend unavailable for feedback, using mock data", e);
+      }
       const delta = 3;
       setModelConfidence((c) => Math.min(99, c + delta));
       setLastFeedbackDelta(delta);
