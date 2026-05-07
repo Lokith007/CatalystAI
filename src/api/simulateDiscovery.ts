@@ -13,11 +13,12 @@ export async function startDiscoveryRun(input: DiscoveryInput): Promise<string> 
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        project_id: "default-project",
         reaction_text: input.reaction,
         temperature_c: input.temperatureC,
         pressure_bar: input.pressureBar,
         cost_weight: input.costWeight,
-        sustainability: input.sustainabilityScore,
+        sustainability_score: input.sustainabilityScore,
         mode: input.mode,
       }),
     });
@@ -56,7 +57,31 @@ export async function pollRunStatus(
       if (status === "complete") {
         const result = await fetch(`${API}/api/discovery/run/${runId}/result`);
         if (!result.ok) throw new Error("API failed");
-        return await result.json();
+        const raw = await result.json();
+        
+        return {
+          known: raw.known.map((k: any) => ({
+            id: k.id,
+            name: k.name,
+            type: k.entity_type,
+            knownActivity: k.known_activity,
+            knownSelectivity: k.known_selectivity,
+            notes: k.notes,
+          })),
+          candidates: raw.candidates.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            predictedActivity: c.predicted_activity,
+            predictedSelectivity: c.predicted_selectivity,
+            predictedStability: c.predicted_stability,
+            confidence: c.confidence,
+            uncertainty: c.uncertainty,
+            badge: c.badge,
+            activeLearningHint: c.active_learning_hint,
+          })),
+          pareto: raw.run.pareto_points || [],
+          pathwaySteps: raw.run.pathway_steps || [],
+        };
       }
       await new Promise(r => setTimeout(r, 500));
     } catch (e) {

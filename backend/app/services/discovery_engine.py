@@ -149,14 +149,41 @@ def run_discovery_pipeline(run: DiscoveryRun, db: Session) -> None:
             "source": "ai",
         })
 
+    from ..models.reaction import Reaction
+    reaction_obj = db.query(Reaction).filter(Reaction.name == run.reaction_text).first()
+
     # Pathway energy diagram
-    pathway_steps = [
-        {"label": "Precursor adsorption", "energy": 0},
-        {"label": "C–O scission TS", "energy": 42 + (seed % 18)},
-        {"label": "Surface carbene", "energy": 18 + (seed % 12)},
-        {"label": "Chain growth / coupling", "energy": -8 - (seed % 10)},
-        {"label": "Product desorption", "energy": 12 + (seed % 8)},
-    ]
+    if reaction_obj and reaction_obj.pathway_template:
+        pathway_steps = []
+        for i, step in enumerate(reaction_obj.pathway_template):
+            noise = (seed % (8 + i * 2)) - 4 if i > 0 else 0
+            pathway_steps.append({"label": step["label"], "energy": step["energy"] + noise})
+    else:
+        pathway_steps = [
+            {"label": "Precursor adsorption", "energy": 0},
+            {"label": "Activation TS", "energy": 42 + (seed % 18)},
+            {"label": "Intermediate", "energy": 18 + (seed % 12)},
+            {"label": "Conversion", "energy": -8 - (seed % 10)},
+            {"label": "Product desorption", "energy": 12 + (seed % 8)},
+        ]
+
+    # Dynamically prefix candidate names if reaction is known
+    prefix = ""
+    if reaction_obj and reaction_obj.output_species and len(reaction_obj.output_species) > 0:
+        target = reaction_obj.output_species[0]
+        # just a short tag like "[NH₃] "
+        if len(target) > 8: target = target[:6] + "…"
+        prefix = f"[{target}] "
+
+    # update candidate names retrospectively (they were created in Step 2)
+    for c in candidates:
+        if not c.name.startswith("["):
+            c.name = f"{prefix}{c.name}"
+
+    # Also update pareto names for ai candidates
+    for p in pareto_points:
+        if p["source"] == "ai" and not p["name"].startswith("["):
+            p["name"] = f"{prefix}{p['name']}"
 
     # --- Step 4: COMPLETE ---
     db.add_all(candidates)

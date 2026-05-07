@@ -5,13 +5,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import SessionLocal
+from app.database import SessionLocal, Base, engine
 from app.models.user import User
 from app.models.project import Project
 from app.models.catalyst import Catalyst
 from app.models.reaction import Reaction
 from app.models.knowledge_graph import KGNode, KGEdge
 from app.services.auth import hash_password
+
+# Ensure tables are created
+Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()
 
@@ -60,6 +63,26 @@ if db.query(Reaction).count() == 0:
                  pathway_template=[{"label": "Glucose uptake", "energy": 0}, {"label": "Glycolysis", "energy": -20}, {"label": "Pyruvate decarboxylation", "energy": -8}, {"label": "Acetaldehyde reduction", "energy": -12}, {"label": "Ethanol export", "energy": 3}]),
         Reaction(name="Lignin → Aromatics", category="biomass-upgrading", input_species=["Lignin"], output_species=["BTX aromatics"], default_temp_c=400, default_pressure_bar=30, default_cost_weight=55, default_sustainability=70, tags=["depolymerization", "biorefinery"], difficulty="hard",
                  pathway_template=[{"label": "Lignin adsorption", "energy": 0}, {"label": "Ether bond cleavage", "energy": 55}, {"label": "Phenol intermediate", "energy": 30}, {"label": "HDO step", "energy": -10}, {"label": "Aromatic desorption", "energy": 8}]),
+        Reaction(name="Haber-Bosch (Thermochemical)", category="nitrogen-fixation", input_species=["N₂", "H₂"], output_species=["NH₃"], default_temp_c=450, default_pressure_bar=200, default_cost_weight=80, default_sustainability=40, tags=["industrial", "ammonia", "high-pressure"], difficulty="hard",
+                 pathway_template=[{"label": "N₂ dissociation", "energy": 110}, {"label": "N* protonation", "energy": 45}, {"label": "NH* formation", "energy": 15}, {"label": "NH₂* formation", "energy": -10}, {"label": "NH₃ desorption", "energy": 25}]),
+        Reaction(name="Fischer-Tropsch Synthesis", category="petrochemistry", input_species=["CO", "H₂"], output_species=["Liquid Alkanes", "H₂O"], default_temp_c=250, default_pressure_bar=25, default_cost_weight=65, default_sustainability=55, tags=["syngas", "alkanes", "polymerization"], difficulty="medium",
+                 pathway_template=[{"label": "CO dissociation", "energy": 85}, {"label": "CH* monomer formation", "energy": 35}, {"label": "Chain propagation", "energy": -15}, {"label": "Chain termination", "energy": 10}, {"label": "Alkane desorption", "energy": 5}]),
+        Reaction(name="Water-Gas Shift (WGS)", category="hydrogen-production", input_species=["CO", "H₂O"], output_species=["CO₂", "H₂"], default_temp_c=200, default_pressure_bar=1, default_cost_weight=40, default_sustainability=75, tags=["syngas-purification", "hydrogen"], difficulty="medium",
+                 pathway_template=[{"label": "H₂O dissociation", "energy": 25}, {"label": "CO adsorption", "energy": -15}, {"label": "Formate intermediate", "energy": 18}, {"label": "CO₂ formation", "energy": -25}, {"label": "H₂ desorption", "energy": 15}]),
+        Reaction(name="Steam Methane Reforming", category="hydrogen-production", input_species=["CH₄", "H₂O"], output_species=["CO", "H₂"], default_temp_c=800, default_pressure_bar=25, default_cost_weight=75, default_sustainability=40, tags=["hydrogen", "endothermic"], difficulty="hard",
+                 pathway_template=[{"label": "CH₄ activation", "energy": 95}, {"label": "CH₃* dehydrogenation", "energy": 40}, {"label": "H₂O dissociation", "energy": 25}, {"label": "C-O coupling", "energy": -15}, {"label": "Syngas desorption", "energy": 30}]),
+        Reaction(name="Sabatier Reaction (Methanation)", category="carbon-capture", input_species=["CO₂", "H₂"], output_species=["CH₄", "H₂O"], default_temp_c=350, default_pressure_bar=1, default_cost_weight=50, default_sustainability=85, tags=["methanation", "power-to-gas"], difficulty="medium",
+                 pathway_template=[{"label": "CO₂ adsorption", "energy": -10}, {"label": "CO* intermediate", "energy": 30}, {"label": "C-O cleavage", "energy": 65}, {"label": "C* hydrogenation", "energy": -20}, {"label": "CH₄ desorption", "energy": 10}]),
+        Reaction(name="Ethylene Epoxidation", category="fine-chemicals", input_species=["C₂H₄", "O₂"], output_species=["C₂H₄O"], default_temp_c=250, default_pressure_bar=15, default_cost_weight=60, default_sustainability=65, tags=["oxidation", "epoxide"], difficulty="hard",
+                 pathway_template=[{"label": "O₂ dissociation", "energy": 45}, {"label": "C₂H₄ adsorption", "energy": -15}, {"label": "Oxametallacycle", "energy": 25}, {"label": "Ring closure", "energy": 10}, {"label": "Epoxide desorption", "energy": 15}]),
+        Reaction(name="Suzuki Cross-Coupling", category="fine-chemicals", input_species=["Aryl Halide", "Boronic Acid"], output_species=["Biaryl", "Halide salt"], default_temp_c=80, default_pressure_bar=1, default_cost_weight=85, default_sustainability=50, tags=["pharmaceuticals", "C-C coupling"], difficulty="medium",
+                 pathway_template=[{"label": "Oxidative addition", "energy": 35}, {"label": "Transmetalation", "energy": 20}, {"label": "Reductive elimination TS", "energy": 40}, {"label": "Product formation", "energy": -30}, {"label": "Catalyst resting state", "energy": 5}]),
+        Reaction(name="PET Depolymerization (Enzymatic)", category="environmental", input_species=["PET plastic", "H₂O"], output_species=["TPA", "EG"], default_temp_c=65, default_pressure_bar=1, default_cost_weight=45, default_sustainability=98, tags=["plastic-recycling", "enzyme"], difficulty="medium",
+                 pathway_template=[{"label": "Enzyme binding", "energy": -15}, {"label": "Ester bond cleavage", "energy": 25}, {"label": "MHET intermediate", "energy": 10}, {"label": "Second cleavage", "energy": 20}, {"label": "Monomers release", "energy": -5}]),
+        Reaction(name="Toluene Disproportionation", category="petrochemistry", input_species=["Toluene"], output_species=["Xylene", "Benzene"], default_temp_c=400, default_pressure_bar=20, default_cost_weight=55, default_sustainability=60, tags=["zeolite", "aromatics"], difficulty="medium",
+                 pathway_template=[{"label": "Toluene adsorption", "energy": -20}, {"label": "Methyl transfer TS", "energy": 75}, {"label": "Diphenylmethane intermediate", "energy": 40}, {"label": "Cleavage", "energy": -10}, {"label": "Product desorption", "energy": 25}]),
+        Reaction(name="Direct Air Capture (DAC) CO₂ Release", category="environmental", input_species=["Amine-CO₂ adduct"], output_species=["CO₂", "Amine"], default_temp_c=100, default_pressure_bar=1, default_cost_weight=80, default_sustainability=90, tags=["DAC", "desorption"], difficulty="easy",
+                 pathway_template=[{"label": "Heating", "energy": 20}, {"label": "Bond weakening", "energy": 35}, {"label": "Carbamate breakdown", "energy": 45}, {"label": "CO₂ release", "energy": -10}, {"label": "Amine regeneration", "energy": -5}]),
     ]
     db.add_all(reactions)
     db.commit()
