@@ -3,7 +3,7 @@ import type { DiscoveryInput, DiscoveryResult, PipelineStep } from "../types/dis
 
 export type ProgressCallback = (step: PipelineStep) => void;
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL ?? "https://backend-catalyst.onrender.com";
 
 export async function startDiscoveryRun(input: DiscoveryInput): Promise<string> {
   try {
