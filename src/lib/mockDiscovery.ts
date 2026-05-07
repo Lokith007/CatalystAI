@@ -83,7 +83,6 @@ export function buildMockResult(input: DiscoveryInput): DiscoveryResult {
   const seed = hashStr(
     `${input.reaction}|${input.mode}|${input.temperatureC}|${input.pressureBar}`
   );
-  const modeBias = input.mode === "synbio" ? 4 : -2;
   const sus = input.sustainabilityScore / 100;
 
   const known: KnownEntity[] = KNOWN_POOL.slice(0, 4).map((k, i) => ({
@@ -101,21 +100,13 @@ export function buildMockResult(input: DiscoveryInput): DiscoveryResult {
   }));
 
   const names =
-    input.mode === "synbio"
-      ? [
-          "Synthase chimera v3",
-          "Rerouted NADPH shuttle",
-          "Surface-displayed oxidoreductase",
-          "CRISPRi-tuned pathway node",
-          "De novo pocket scaffold X1",
-        ]
-      : [
-          "Single-atom Co–N₄ variant",
-          "Sulfided Ni–Mo/W edge ensemble",
-          "Zeolite-confined carbene relay",
-          "Perovskite B-site substituted",
-          "Liquid alloy interfacial site",
-        ];
+    [
+      "Single-atom Co–N₄ variant",
+      "Sulfided Ni–Mo/W edge ensemble",
+      "Zeolite-confined carbene relay",
+      "Perovskite B-site substituted",
+      "Liquid alloy interfacial site",
+    ];
 
   const candidates: AICandidate[] = names.map((name, i) => {
     const r1 = pseudoRandom(seed, 20 + i);
@@ -124,7 +115,6 @@ export function buildMockResult(input: DiscoveryInput): DiscoveryResult {
     const base =
       55 +
       sus * 22 +
-      modeBias +
       (input.costWeight < 40 ? 6 : input.costWeight > 70 ? -4 : 0);
     const predictedActivity = clamp(
       Math.round(base + r1 * 28 + (input.temperatureC > 350 ? 4 : 0)),
@@ -137,7 +127,7 @@ export function buildMockResult(input: DiscoveryInput): DiscoveryResult {
       97
     );
     const predictedStability = clamp(
-      Math.round(52 + r3 * 38 + (input.mode === "catalysis" ? 5 : 2)),
+      Math.round(52 + r3 * 38 + 5),
       40,
       96
     );

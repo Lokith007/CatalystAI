@@ -1,11 +1,14 @@
 """Pydantic schemas for experiments (feedback loop)."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExperimentCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     candidate_id: str
-    actual_activity: float
+    # Frontend sends `actual_yield`; backend stores it as `actual_activity`.
+    actual_activity: float = Field(validation_alias="actual_yield")
     actual_selectivity: float
     actual_stability: float
     actual_temp_c: float | None = None
@@ -17,6 +20,8 @@ class ExperimentCreate(BaseModel):
 
 
 class ExperimentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     candidate_id: str
     actual_activity: float
@@ -27,6 +32,3 @@ class ExperimentOut(BaseModel):
     notes: str
     operator: str
     created_at: str | None = None
-
-    class Config:
-        from_attributes = True

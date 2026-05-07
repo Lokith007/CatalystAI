@@ -3,7 +3,6 @@ import { DiscoveryProvider } from "./context/DiscoveryContext";
 import { ComparePage } from "./pages/ComparePage";
 import { DiscoveryDashboard } from "./pages/DiscoveryDashboard";
 import { FeedbackPage } from "./pages/FeedbackPage";
-import { KnowledgeGraphPage } from "./pages/KnowledgeGraphPage";
 import { Landing } from "./pages/Landing";
 import { StudioLayout } from "./pages/StudioLayout";
 
@@ -23,7 +22,6 @@ export default function App() {
           <Route index element={<DiscoveryDashboard />} />
           <Route path="compare" element={<ComparePage />} />
           <Route path="experiments" element={<FeedbackPage />} />
-          <Route path="knowledge" element={<KnowledgeGraphPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -96,6 +96,15 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
           }),
         });
         if (!res.ok) throw new Error("API failed");
+        const exp = await res.json();
+        const before = typeof exp.model_confidence_before === "number" ? exp.model_confidence_before : null;
+        const after = typeof exp.model_confidence_after === "number" ? exp.model_confidence_after : null;
+        if (after != null) {
+          setModelConfidence(after);
+          if (before != null) setLastFeedbackDelta(Math.max(0, after - before));
+          else setLastFeedbackDelta(null);
+          return;
+        }
       } catch (e) {
         console.warn("Backend unavailable for feedback, using mock data", e);
       }

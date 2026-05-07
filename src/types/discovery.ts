@@ -1,4 +1,4 @@
-export type DiscoveryMode = "catalysis" | "synbio";
+export type DiscoveryMode = "catalysis";
 
 export type UncertaintyLevel = "low" | "medium" | "high";
 

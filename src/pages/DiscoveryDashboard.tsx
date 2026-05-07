@@ -141,18 +141,25 @@ export function DiscoveryDashboard() {
             Constraints
           </span>
         </div>
-        <label className="block text-xs font-medium text-zinc-400">
+        <label
+          htmlFor="reaction-input"
+          className="block text-xs font-medium text-zinc-400"
+        >
           Target reaction
         </label>
         <input
+          id="reaction-input"
           className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none ring-neon-blue/30 focus:ring-2"
           value={input.reaction}
           onChange={(e) => setInput({ reaction: e.target.value })}
         />
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs text-zinc-400">Temperature (°C)</label>
+            <label htmlFor="temp-input" className="text-xs text-zinc-400">
+              Temperature (°C)
+            </label>
             <input
+              id="temp-input"
               type="number"
               className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
               value={input.temperatureC}
@@ -162,8 +169,11 @@ export function DiscoveryDashboard() {
             />
           </div>
           <div>
-            <label className="text-xs text-zinc-400">Pressure (bar)</label>
+            <label htmlFor="pressure-input" className="text-xs text-zinc-400">
+              Pressure (bar)
+            </label>
             <input
+              id="pressure-input"
               type="number"
               className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
               value={input.pressureBar}
@@ -174,10 +184,11 @@ export function DiscoveryDashboard() {
           </div>
         </div>
         <div className="mt-3">
-          <label className="text-xs text-zinc-400">
+          <label htmlFor="cost-range" className="text-xs text-zinc-400">
             Cost sensitivity (weight)
           </label>
           <input
+            id="cost-range"
             type="range"
             min={0}
             max={100}
@@ -194,10 +205,11 @@ export function DiscoveryDashboard() {
           </div>
         </div>
         <div className="mt-3">
-          <label className="text-xs text-zinc-400">
+          <label htmlFor="sustainability-range" className="text-xs text-zinc-400">
             Sustainability score
           </label>
           <input
+            id="sustainability-range"
             type="range"
             min={0}
             max={100}
@@ -211,29 +223,10 @@ export function DiscoveryDashboard() {
         <p className="mt-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
           Modality
         </p>
-        <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            onClick={() => setInput({ mode: "catalysis" })}
-            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
-              input.mode === "catalysis"
-                ? "border-neon-blue/50 bg-neon-blue/15 text-neon-blue"
-                : "border-white/10 bg-white/5 text-zinc-400 hover:border-white/20"
-            }`}
-          >
+        <div className="mt-2">
+          <div className="rounded-lg border border-neon-blue/30 bg-neon-blue/10 px-3 py-2 text-xs font-medium text-neon-blue">
             Chemical catalysis
-          </button>
-          <button
-            type="button"
-            onClick={() => setInput({ mode: "synbio" })}
-            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
-              input.mode === "synbio"
-                ? "border-neon-purple/50 bg-neon-purple/15 text-neon-purple"
-                : "border-white/10 bg-white/5 text-zinc-400 hover:border-white/20"
-            }`}
-          >
-            Synthetic biology
-          </button>
+          </div>
         </div>
         <div className="mt-6 flex flex-col gap-2">
           <NeonButton

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Base, engine
-from .routers import auth, catalysts, reactions, discovery, experiments, knowledge_graph
+from .routers import auth, catalysts, reactions, discovery, experiments, compare
 
 # Create all tables on startup (simple approach for dev / small deployments)
 Base.metadata.create_all(bind=engine)
@@ -31,7 +31,7 @@ app.include_router(catalysts.router)
 app.include_router(reactions.router)
 app.include_router(discovery.router)
 app.include_router(experiments.router)
-app.include_router(knowledge_graph.router)
+app.include_router(compare.router)
 
 
 @app.get("/api/health")

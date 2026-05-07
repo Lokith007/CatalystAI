@@ -5,7 +5,6 @@ const links = [
   { to: "/studio", label: "Discovery", end: true },
   { to: "/studio/compare", label: "Compare" },
   { to: "/studio/experiments", label: "Experiments" },
-  { to: "/studio/knowledge", label: "Knowledge Graph" },
 ];
 
 export function StudioLayout() {

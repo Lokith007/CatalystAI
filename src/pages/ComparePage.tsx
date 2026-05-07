@@ -1,27 +1,30 @@
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { GlassCard } from "../components/ui/GlassCard";
 import { MetricBar } from "../components/ui/MetricBar";
 import { NeonButton } from "../components/ui/NeonButton";
 import { useDiscovery } from "../context/DiscoveryContext";
-import type { AICandidate } from "../types/discovery";
 
-function bestFlags(rows: AICandidate[]) {
-  const act = Math.max(...rows.map((r) => r.predictedActivity));
-  const sel = Math.max(...rows.map((r) => r.predictedSelectivity));
-  const stab = Math.max(...rows.map((r) => r.predictedStability));
-  const conf = Math.max(...rows.map((r) => r.confidence));
-  return rows.map((r) => ({
-    activity: r.predictedActivity === act,
-    selectivity: r.predictedSelectivity === sel,
-    stability: r.predictedStability === stab,
-    confidence: r.confidence === conf,
-  }));
-}
+type CompareRow = {
+  id: string;
+  name: string;
+  predicted_activity: number;
+  predicted_selectivity: number;
+  predicted_stability: number;
+  confidence: number;
+  composite: number;
+  best: {
+    activity: boolean;
+    selectivity: boolean;
+    stability: boolean;
+    confidence: boolean;
+  };
+};
 
 export function ComparePage() {
   const { result } = useDiscovery();
   const [selected, setSelected] = useState<string[]>([]);
+  const [serverRows, setServerRows] = useState<CompareRow[] | null>(null);
 
   const candidates = useMemo(
     () => result?.candidates ?? [],
@@ -33,10 +36,48 @@ export function ComparePage() {
     [candidates, selected]
   );
 
-  const flags = useMemo(
-    () => bestFlags(selectedRows),
-    [selectedRows]
-  );
+  useEffect(() => {
+    const run = async () => {
+      if (!result) return;
+      if (selected.length === 0) {
+        setServerRows(null);
+        return;
+      }
+
+      const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+      try {
+        const res = await fetch(`${API}/api/compare/candidates`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ candidate_ids: selected }),
+        });
+        if (!res.ok) throw new Error("API failed");
+        const data = await res.json();
+        setServerRows(data.rows ?? null);
+      } catch (e) {
+        console.warn("Compare API unavailable, using local comparison", e);
+        setServerRows(null);
+      }
+    };
+    run();
+  }, [result, selected]);
+
+  const flags = useMemo(() => {
+    if (serverRows && serverRows.length === selectedRows.length) {
+      return serverRows.map((r) => r.best);
+    }
+    if (selectedRows.length === 0) return [];
+    const act = Math.max(...selectedRows.map((r) => r.predictedActivity));
+    const sel = Math.max(...selectedRows.map((r) => r.predictedSelectivity));
+    const stab = Math.max(...selectedRows.map((r) => r.predictedStability));
+    const conf = Math.max(...selectedRows.map((r) => r.confidence));
+    return selectedRows.map((r) => ({
+      activity: r.predictedActivity === act,
+      selectivity: r.predictedSelectivity === sel,
+      stability: r.predictedStability === stab,
+      confidence: r.confidence === conf,
+    }));
+  }, [selectedRows, serverRows]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -93,6 +134,7 @@ export function ComparePage() {
         <div className="grid gap-4 lg:grid-cols-3">
           {selectedRows.map((c, idx) => {
             const f = flags[idx];
+            const server = serverRows?.find((r) => r.id === c.id) ?? null;
             return (
               <motion.div
                 key={c.id}
@@ -129,10 +171,11 @@ export function ComparePage() {
                     <MetricBar
                       label="Composite view"
                       value={
+                        server?.composite ??
                         (c.predictedActivity +
                           c.predictedSelectivity +
                           c.predictedStability) /
-                        3
+                          3
                       }
                     />
                   </div>
