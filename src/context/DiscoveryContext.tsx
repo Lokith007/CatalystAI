@@ -83,7 +83,7 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
       actualSelectivity: number;
       actualStability: number;
     }) => {
-      const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+      const API = import.meta.env.VITE_API_URL ?? "https://backend-catalyst.onrender.com";
       try {
         const res = await fetch(`${API}/api/experiments`, {
           method: "POST",
