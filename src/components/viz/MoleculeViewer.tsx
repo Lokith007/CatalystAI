@@ -2,17 +2,32 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Sphere } from "@react-three/drei";
 import { Suspense, useMemo } from "react";
 
-function MockCluster() {
-  const atoms = useMemo(
-    () => [
+function MockCluster({ seed = 0 }: { seed?: number }) {
+  const atoms = useMemo(() => {
+    // Generate pseudo-random perturbation based on seed
+    const rand = (i: number) => {
+      const x = Math.sin(seed * 9999 + i * 777) * 10000;
+      return x - Math.floor(x);
+    };
+    
+    const baseAtoms = [
       { pos: [0, 0, 0] as [number, number, number], color: "#00d4ff", r: 0.35 },
       { pos: [0.55, 0.35, 0.1] as [number, number, number], color: "#a855f7", r: 0.28 },
       { pos: [-0.45, 0.25, -0.2] as [number, number, number], color: "#fb923c", r: 0.22 },
       { pos: [0.35, -0.4, 0.25] as [number, number, number], color: "#7c3aed", r: 0.24 },
       { pos: [-0.3, -0.35, 0.15] as [number, number, number], color: "#22d3ee", r: 0.2 },
-    ],
-    []
-  );
+    ];
+    
+    return baseAtoms.map((a, i) => {
+      const dx = (rand(i * 3) - 0.5) * 0.3;
+      const dy = (rand(i * 3 + 1) - 0.5) * 0.3;
+      const dz = (rand(i * 3 + 2) - 0.5) * 0.3;
+      return {
+        ...a,
+        pos: [a.pos[0] + dx, a.pos[1] + dy, a.pos[2] + dz] as [number, number, number]
+      };
+    });
+  }, [seed]);
 
   return (
     <group>
@@ -35,7 +50,7 @@ function MockCluster() {
   );
 }
 
-export function MoleculeViewer() {
+export function MoleculeViewer({ seed = 0 }: { seed?: number }) {
   return (
     <div className="relative h-[220px] w-full overflow-hidden rounded-xl border border-white/10 bg-gradient-to-b from-ink/80 to-void shadow-inner">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,212,255,0.08),transparent_70%)]" />
@@ -47,7 +62,7 @@ export function MoleculeViewer() {
         }
       >
         <Canvas camera={{ position: [1.8, 1.4, 2.2], fov: 42 }}>
-          <MockCluster />
+          <MockCluster seed={seed} />
         </Canvas>
       </Suspense>
       <div className="pointer-events-none absolute bottom-2 left-2 rounded-md border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-zinc-400 backdrop-blur">
