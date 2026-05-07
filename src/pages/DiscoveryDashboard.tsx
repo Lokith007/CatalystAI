@@ -481,25 +481,32 @@ export function DiscoveryDashboard() {
             Structure, energetics, and pathway topology (mock).
           </p>
         </div>
-        <MoleculeViewer seed={selectedSeed} />
-        <div>
-          <p className="mb-2 text-xs font-medium text-zinc-400">
-            Reaction energy diagram
-          </p>
-          {result ? (
-            <ReactionEnergyChart steps={dynamicPathwaySteps} />
-          ) : (
-            <div className="flex h-[200px] items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 text-xs text-zinc-500">
-              Run discovery to synthesize a pathway profile.
+        {!result ? (
+          <div className="flex min-h-[520px] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 px-6 text-center">
+            <p className="text-sm font-medium text-white">No discovery run yet</p>
+            <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+              Click <span className="text-zinc-300">Run AI Discovery</span> to
+              generate a candidate-specific structure preview, reaction energy
+              diagram, and pathway flow.
+            </p>
+          </div>
+        ) : (
+          <>
+            <MoleculeViewer seed={selectedSeed} />
+            <div>
+              <p className="mb-2 text-xs font-medium text-zinc-400">
+                Reaction energy diagram
+              </p>
+              <ReactionEnergyChart steps={dynamicPathwaySteps} />
             </div>
-          )}
-        </div>
-        <div>
-          <p className="mb-2 text-xs font-medium text-zinc-400">
-            Pathway flow
-          </p>
-          <PathwayFlow seed={selectedSeed} steps={dynamicPathwaySteps} />
-        </div>
+            <div>
+              <p className="mb-2 text-xs font-medium text-zinc-400">
+                Pathway flow
+              </p>
+              <PathwayFlow seed={selectedSeed} steps={dynamicPathwaySteps} />
+            </div>
+          </>
+        )}
       </GlassCard>
     </div>
   );
