@@ -35,6 +35,7 @@ class CandidateOut(BaseModel):
     name: str
     description: str
     smiles: str | None = None
+    composition: dict | None = None
     predicted_activity: float
     predicted_selectivity: float
     predicted_stability: float

@@ -2,19 +2,22 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import { startDiscoveryRun, pollRunStatus } from "../api/simulateDiscovery";
+import { startDiscoveryRun, pollRunStatus, fetchReactions } from "../api/simulateDiscovery";
 import type {
   DiscoveryInput,
   DiscoveryResult,
   PipelineStep,
+  ReactionSummary,
 } from "../types/discovery";
 
 const defaultInput: DiscoveryInput = {
   reaction: "Ethanol → Jet fuel (C8–C16)",
+  reactionId: undefined,
   temperatureC: 320,
   pressureBar: 25,
   costWeight: 50,
@@ -25,6 +28,7 @@ const defaultInput: DiscoveryInput = {
 type DiscoveryContextValue = {
   input: DiscoveryInput;
   setInput: (patch: Partial<DiscoveryInput>) => void;
+  reactions: ReactionSummary[];
   result: DiscoveryResult | null;
   pipelineStep: PipelineStep;
   isRunning: boolean;
@@ -44,13 +48,19 @@ const DiscoveryContext = createContext<DiscoveryContextValue | null>(null);
 
 export function DiscoveryProvider({ children }: { children: ReactNode }) {
   const [input, setInputState] = useState<DiscoveryInput>(defaultInput);
+  const [reactions, setReactions] = useState<ReactionSummary[]>([]);
   const [result, setResult] = useState<DiscoveryResult | null>(null);
   const [pipelineStep, setPipelineStep] = useState<PipelineStep>("idle");
   const [isRunning, setIsRunning] = useState(false);
   const [modelConfidence, setModelConfidence] = useState(72);
-  const [lastFeedbackDelta, setLastFeedbackDelta] = useState<number | null>(
-    null
-  );
+  const [lastFeedbackDelta, setLastFeedbackDelta] = useState<number | null>(null);
+
+  // Fetch reaction list on mount
+  useEffect(() => {
+    fetchReactions().then((rxns) => {
+      if (rxns.length > 0) setReactions(rxns);
+    });
+  }, []);
 
   const setInput = useCallback((patch: Partial<DiscoveryInput>) => {
     setInputState((prev) => ({ ...prev, ...patch }));
@@ -89,10 +99,10 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-             candidate_id: payload.candidateId,
-             actual_yield: payload.actualYield,
-             actual_selectivity: payload.actualSelectivity,
-             actual_stability: payload.actualStability,
+            candidate_id: payload.candidateId,
+            actual_yield: payload.actualYield,
+            actual_selectivity: payload.actualSelectivity,
+            actual_stability: payload.actualStability,
           }),
         });
         if (!res.ok) throw new Error("API failed");
@@ -117,18 +127,7 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
 
   const exportJson = useCallback(() => {
     const blob = new Blob(
-      [
-        JSON.stringify(
-          {
-            input,
-            result,
-            modelConfidence,
-            exportedAt: new Date().toISOString(),
-          },
-          null,
-          2
-        ),
-      ],
+      [JSON.stringify({ input, result, modelConfidence, exportedAt: new Date().toISOString() }, null, 2)],
       { type: "application/json" }
     );
     const url = URL.createObjectURL(blob);
@@ -143,6 +142,7 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
     () => ({
       input,
       setInput,
+      reactions,
       result,
       pipelineStep,
       isRunning,
@@ -152,18 +152,7 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
       submitFeedback,
       exportJson,
     }),
-    [
-      input,
-      setInput,
-      result,
-      pipelineStep,
-      isRunning,
-      modelConfidence,
-      lastFeedbackDelta,
-      runDiscovery,
-      submitFeedback,
-      exportJson,
-    ]
+    [input, setInput, reactions, result, pipelineStep, isRunning, modelConfidence, lastFeedbackDelta, runDiscovery, submitFeedback, exportJson]
   );
 
   return (

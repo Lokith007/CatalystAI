@@ -55,7 +55,17 @@ def get_run_result(run_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="Run not yet complete")
 
     candidates = db.query(Candidate).filter(Candidate.discovery_run_id == run_id).all()
-    known = db.query(Catalyst).all()
+
+    # Return only the catalysts that were selected during this run (stored in pareto_points)
+    known_ids = [
+        p["id"] for p in (run.pareto_points or []) if p.get("source") == "known"
+    ]
+    if known_ids:
+        all_known = db.query(Catalyst).filter(Catalyst.id.in_(known_ids)).all()
+        id_order = {pid: i for i, pid in enumerate(known_ids)}
+        known = sorted(all_known, key=lambda c: id_order.get(c.id, 999))
+    else:
+        known = db.query(Catalyst).limit(8).all()
 
     return DiscoveryResultOut(
         run=run,
