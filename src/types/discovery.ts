@@ -4,8 +4,19 @@ export type UncertaintyLevel = "low" | "medium" | "high";
 
 export type PerformanceBadge = "High" | "Medium" | "Experimental";
 
+export interface ReactionSummary {
+  id: string;
+  name: string;
+  category: string;
+  defaultTempC: number;
+  defaultPressureBar: number;
+  defaultCostWeight: number;
+  defaultSustainability: number;
+}
+
 export interface DiscoveryInput {
   reaction: string;
+  reactionId?: string;
   temperatureC: number;
   pressureBar: number;
   costWeight: number;
@@ -19,12 +30,16 @@ export interface KnownEntity {
   type: "catalyst" | "enzyme" | "pathway";
   knownActivity: number;
   knownSelectivity: number;
+  knownStability: number;
   notes: string;
+  composition?: Record<string, number>;
 }
 
 export interface AICandidate {
   id: string;
   name: string;
+  description: string;
+  composition?: Record<string, number>;
   predictedActivity: number;
   predictedSelectivity: number;
   predictedStability: number;

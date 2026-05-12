@@ -11,7 +11,7 @@ import { NeonButton } from "../components/ui/NeonButton";
 import { StatusBadge, UncertaintyBadge } from "../components/ui/StatusBadge";
 import { TooltipLabel } from "../components/ui/TooltipLabel";
 import { useDiscovery } from "../context/DiscoveryContext";
-import type { ParetoPoint } from "../types/discovery";
+import type { KnownEntity, AICandidate, ParetoPoint } from "../types/discovery";
 
 type TabId = "known" | "ai" | "rank";
 
@@ -21,19 +21,22 @@ const tabs: { id: TabId; label: string; emoji: string }[] = [
   { id: "rank", label: "Ranking & Optimization", emoji: "📊" },
 ];
 
-function StructurePreview({ seed }: { seed: number }) {
-  const rot = (seed % 360) + "deg";
+function CompositionBadges({ composition }: { composition?: Record<string, number> }) {
+  if (!composition || Object.keys(composition).length === 0) return null;
+  const entries = Object.entries(composition)
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6);
   return (
-    <div
-      className="relative mx-auto flex h-24 w-24 items-center justify-center rounded-xl border border-white/10 bg-gradient-to-br from-neon-blue/10 to-neon-purple/10 shadow-inner"
-      style={{ transform: `rotate(${rot})` }}
-    >
-      <div className="absolute h-10 w-10 rounded-full border-2 border-neon-blue/50 bg-neon-blue/20" />
-      <div className="absolute h-6 w-6 translate-x-3 translate-y-2 rounded-full border border-neon-purple/60 bg-neon-purple/25" />
-      <div className="absolute h-5 w-5 -translate-x-3 -translate-y-1 rounded-full border border-neon-orange/40 bg-neon-orange/15" />
-      <span className="relative z-[1] text-[9px] font-medium uppercase tracking-wider text-zinc-500">
-        3D
-      </span>
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {entries.map(([el]) => (
+        <span
+          key={el}
+          className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-mono text-zinc-400"
+        >
+          {el}
+        </span>
+      ))}
     </div>
   );
 }
@@ -42,6 +45,7 @@ export function DiscoveryDashboard() {
   const {
     input,
     setInput,
+    reactions,
     result,
     isRunning,
     pipelineStep,
@@ -49,9 +53,7 @@ export function DiscoveryDashboard() {
     exportJson,
   } = useDiscovery();
   const [tab, setTab] = useState<TabId>("known");
-  const [sortKey, setSortKey] = useState<"yield" | "cost" | "stability">(
-    "yield"
-  );
+  const [sortKey, setSortKey] = useState<"yield" | "cost" | "stability">("yield");
   const [selectedCatalystId, setSelectedCatalystId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -66,6 +68,16 @@ export function DiscoveryDashboard() {
     }
   }, [result, tab]);
 
+  // Find composition of selected entity for MoleculeViewer
+  const selectedComposition = useMemo(() => {
+    if (!result || !selectedCatalystId) return undefined;
+    const known = result.known.find((k) => k.id === selectedCatalystId);
+    if (known) return known.composition;
+    const candidate = result.candidates.find((c) => c.id === selectedCatalystId);
+    if (candidate) return candidate.composition;
+    return undefined;
+  }, [result, selectedCatalystId]);
+
   const selectedSeed = useMemo(() => {
     if (!selectedCatalystId) return 0;
     let hash = 0;
@@ -78,7 +90,6 @@ export function DiscoveryDashboard() {
   const dynamicPathwaySteps = useMemo(() => {
     if (!result?.pathwaySteps) return [];
     if (!selectedCatalystId) return result.pathwaySteps;
-    // Add a slight perturbation based on the selected catalyst
     return result.pathwaySteps.map((step, i) => {
       const noise = i > 0 && i < result.pathwaySteps.length - 1 ? (selectedSeed % (i * 3 + 5)) - 2 : 0;
       return { ...step, energy: step.energy + noise };
@@ -105,6 +116,24 @@ export function DiscoveryDashboard() {
           ? "Surrogate ensemble predicting performance…"
           : "";
 
+  // Reaction dropdown handler
+  function handleReactionSelect(reactionId: string) {
+    if (reactionId === "") {
+      setInput({ reactionId: undefined });
+      return;
+    }
+    const rxn = reactions.find((r) => r.id === reactionId);
+    if (!rxn) return;
+    setInput({
+      reaction: rxn.name,
+      reactionId: rxn.id,
+      temperatureC: rxn.defaultTempC,
+      pressureBar: rxn.defaultPressureBar,
+      costWeight: rxn.defaultCostWeight,
+      sustainabilityScore: rxn.defaultSustainability,
+    });
+  }
+
   return (
     <div className="relative flex flex-col gap-4 xl:flex-row xl:items-start">
       <AnimatePresence>
@@ -121,9 +150,7 @@ export function DiscoveryDashboard() {
               className="max-w-md rounded-2xl border border-white/15 bg-charcoal/95 p-8 text-center shadow-glow"
             >
               <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-neon-blue border-t-transparent" />
-              <p className="text-lg font-semibold text-white">
-                Running AI discovery…
-              </p>
+              <p className="text-lg font-semibold text-white">Running AI discovery…</p>
               <p className="mt-2 text-sm text-neon-blue">{pipelineLabel}</p>
               <p className="mt-4 text-xs text-zinc-500">
                 Input → Retrieval → Generation → Prediction
@@ -141,61 +168,68 @@ export function DiscoveryDashboard() {
             Constraints
           </span>
         </div>
-        <label
-          htmlFor="reaction-input"
-          className="block text-xs font-medium text-zinc-400"
-        >
+
+        {/* Reaction dropdown (shown when reactions loaded from backend) */}
+        {reactions.length > 0 && (
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-zinc-400">
+              Select reaction
+            </label>
+            <select
+              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none ring-neon-blue/30 focus:ring-2 appearance-none"
+              value={input.reactionId ?? ""}
+              onChange={(e) => handleReactionSelect(e.target.value)}
+            >
+              <option value="">Custom / type below</option>
+              {reactions.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <label htmlFor="reaction-input" className="block text-xs font-medium text-zinc-400">
           Target reaction
         </label>
         <input
           id="reaction-input"
           className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none ring-neon-blue/30 focus:ring-2"
           value={input.reaction}
-          onChange={(e) => setInput({ reaction: e.target.value })}
+          onChange={(e) => setInput({ reaction: e.target.value, reactionId: undefined })}
         />
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="temp-input" className="text-xs text-zinc-400">
-              Temperature (°C)
-            </label>
+            <label htmlFor="temp-input" className="text-xs text-zinc-400">Temperature (°C)</label>
             <input
               id="temp-input"
               type="number"
               className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
               value={input.temperatureC}
-              onChange={(e) =>
-                setInput({ temperatureC: Number(e.target.value) })
-              }
+              onChange={(e) => setInput({ temperatureC: Number(e.target.value) })}
             />
           </div>
           <div>
-            <label htmlFor="pressure-input" className="text-xs text-zinc-400">
-              Pressure (bar)
-            </label>
+            <label htmlFor="pressure-input" className="text-xs text-zinc-400">Pressure (bar)</label>
             <input
               id="pressure-input"
               type="number"
               className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
               value={input.pressureBar}
-              onChange={(e) =>
-                setInput({ pressureBar: Number(e.target.value) })
-              }
+              onChange={(e) => setInput({ pressureBar: Number(e.target.value) })}
             />
           </div>
         </div>
         <div className="mt-3">
-          <label htmlFor="cost-range" className="text-xs text-zinc-400">
-            Cost sensitivity (weight)
-          </label>
+          <label htmlFor="cost-range" className="text-xs text-zinc-400">Cost sensitivity (weight)</label>
           <input
             id="cost-range"
             type="range"
             min={0}
             max={100}
             value={input.costWeight}
-            onChange={(e) =>
-              setInput({ costWeight: Number(e.target.value) })
-            }
+            onChange={(e) => setInput({ costWeight: Number(e.target.value) })}
             className="mt-1 w-full accent-neon-blue"
           />
           <div className="flex justify-between text-[10px] text-zinc-500">
@@ -205,24 +239,18 @@ export function DiscoveryDashboard() {
           </div>
         </div>
         <div className="mt-3">
-          <label htmlFor="sustainability-range" className="text-xs text-zinc-400">
-            Sustainability score
-          </label>
+          <label htmlFor="sustainability-range" className="text-xs text-zinc-400">Sustainability score</label>
           <input
             id="sustainability-range"
             type="range"
             min={0}
             max={100}
             value={input.sustainabilityScore}
-            onChange={(e) =>
-              setInput({ sustainabilityScore: Number(e.target.value) })
-            }
+            onChange={(e) => setInput({ sustainabilityScore: Number(e.target.value) })}
             className="mt-1 w-full accent-neon-purple"
           />
         </div>
-        <p className="mt-4 text-xs font-medium uppercase tracking-wider text-zinc-500">
-          Modality
-        </p>
+        <p className="mt-4 text-xs font-medium uppercase tracking-wider text-zinc-500">Modality</p>
         <div className="mt-2">
           <div className="rounded-lg border border-neon-blue/30 bg-neon-blue/10 px-3 py-2 text-xs font-medium text-neon-blue">
             Chemical catalysis
@@ -247,8 +275,8 @@ export function DiscoveryDashboard() {
           </NeonButton>
         </div>
         <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
-          Simulated pipeline: retrieval from a mock knowledge base, five
-          generative candidates, ensemble prediction, and Pareto-aware ranking.
+          Chemistry-aware pipeline: retrieval from seeded catalyst database,
+          3 AI candidates via deterministic mutation strategies, Pareto-aware ranking.
         </p>
       </GlassCard>
 
@@ -262,9 +290,7 @@ export function DiscoveryDashboard() {
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={`relative flex-1 px-3 py-3 text-left text-xs font-medium transition-colors md:text-sm ${
-                  tab === t.id
-                    ? "text-white"
-                    : "text-zinc-500 hover:text-zinc-300"
+                  tab === t.id ? "text-white" : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
                 <span className="mr-1.5">{t.emoji}</span>
@@ -287,9 +313,11 @@ export function DiscoveryDashboard() {
                 </p>
               </div>
             )}
+
+            {/* Known catalysts tab */}
             {result && tab === "known" && (
               <div className="grid gap-3 md:grid-cols-2">
-                {result.known.map((k, i) => (
+                {result.known.map((k: KnownEntity, i) => (
                   <motion.div
                     key={k.id}
                     initial={{ opacity: 0, y: 8 }}
@@ -304,20 +332,16 @@ export function DiscoveryDashboard() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-semibold text-white">
-                          {k.name}
-                        </p>
+                        <p className="text-sm font-semibold text-white">{k.name}</p>
                         <span className="mt-1 inline-block rounded border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
                           {k.type}
                         </span>
+                        <CompositionBadges composition={k.composition} />
                       </div>
                     </div>
                     <p className="mt-2 text-xs text-zinc-500">{k.notes}</p>
                     <div className="mt-3 space-y-2">
-                      <MetricBar
-                        label="Reported activity"
-                        value={k.knownActivity}
-                      />
+                      <MetricBar label="Reported activity" value={k.knownActivity} />
                       <MetricBar
                         label="Selectivity proxy"
                         value={k.knownSelectivity}
@@ -328,9 +352,11 @@ export function DiscoveryDashboard() {
                 ))}
               </div>
             )}
+
+            {/* AI candidates tab */}
             {result && tab === "ai" && (
               <div className="grid gap-4 lg:grid-cols-2">
-                {result.candidates.map((c, i) => (
+                {result.candidates.map((c: AICandidate, i) => (
                   <motion.div
                     key={c.id}
                     initial={{ opacity: 0, scale: 0.98 }}
@@ -343,16 +369,17 @@ export function DiscoveryDashboard() {
                         : "border-white/10 hover:border-white/30"
                     }`}
                   >
-                    <div className="flex gap-4">
-                      <StructurePreview seed={i * 47 + c.name.length} />
+                    <div className="flex gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate text-sm font-semibold text-white">
-                            {c.name}
-                          </h3>
+                          <h3 className="truncate text-sm font-semibold text-white">{c.name}</h3>
                           <StatusBadge badge={c.badge} />
                           <UncertaintyBadge level={c.uncertainty} />
                         </div>
+                        <p className="mt-1 text-[11px] italic text-zinc-400 leading-relaxed">
+                          {c.description}
+                        </p>
+                        <CompositionBadges composition={c.composition} />
                         <p className="mt-2 text-[11px] text-zinc-500">
                           Confidence {c.confidence}%
                           {c.activeLearningHint && (
@@ -396,6 +423,8 @@ export function DiscoveryDashboard() {
                 ))}
               </div>
             )}
+
+            {/* Ranking tab */}
             {result && tab === "rank" && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
@@ -441,25 +470,13 @@ export function DiscoveryDashboard() {
                         >
                           <td className="px-3 py-2 text-zinc-200">{p.name}</td>
                           <td className="px-3 py-2">
-                            <span
-                              className={
-                                p.source === "ai"
-                                  ? "text-neon-purple"
-                                  : "text-neon-blue"
-                              }
-                            >
+                            <span className={p.source === "ai" ? "text-neon-purple" : "text-neon-blue"}>
                               {p.source === "ai" ? "AI" : "Known"}
                             </span>
                           </td>
-                          <td className="px-3 py-2 tabular-nums text-zinc-300">
-                            {p.yield.toFixed(1)}
-                          </td>
-                          <td className="px-3 py-2 tabular-nums text-zinc-300">
-                            {p.cost.toFixed(1)}
-                          </td>
-                          <td className="px-3 py-2 tabular-nums text-zinc-300">
-                            {p.stability.toFixed(1)}
-                          </td>
+                          <td className="px-3 py-2 tabular-nums text-zinc-300">{p.yield.toFixed(1)}</td>
+                          <td className="px-3 py-2 tabular-nums text-zinc-300">{p.cost.toFixed(1)}</td>
+                          <td className="px-3 py-2 tabular-nums text-zinc-300">{p.stability.toFixed(1)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -474,11 +491,9 @@ export function DiscoveryDashboard() {
       {/* Right — viz */}
       <GlassCard className="w-full shrink-0 space-y-4 border-gradient p-4 xl:sticky xl:top-4 xl:max-w-[380px]">
         <div>
-          <h2 className="text-sm font-semibold text-white">
-            Visualization panel
-          </h2>
+          <h2 className="text-sm font-semibold text-white">Visualization panel</h2>
           <p className="text-[11px] text-zinc-500">
-            Structure, energetics, and pathway topology (mock).
+            Structure, energetics, and pathway topology.
           </p>
         </div>
         {!result ? (
@@ -492,17 +507,13 @@ export function DiscoveryDashboard() {
           </div>
         ) : (
           <>
-            <MoleculeViewer seed={selectedSeed} />
+            <MoleculeViewer seed={selectedSeed} composition={selectedComposition} />
             <div>
-              <p className="mb-2 text-xs font-medium text-zinc-400">
-                Reaction energy diagram
-              </p>
+              <p className="mb-2 text-xs font-medium text-zinc-400">Reaction energy diagram</p>
               <ReactionEnergyChart steps={dynamicPathwaySteps} />
             </div>
             <div>
-              <p className="mb-2 text-xs font-medium text-zinc-400">
-                Pathway flow
-              </p>
+              <p className="mb-2 text-xs font-medium text-zinc-400">Pathway flow</p>
               <PathwayFlow seed={selectedSeed} steps={dynamicPathwaySteps} />
             </div>
           </>

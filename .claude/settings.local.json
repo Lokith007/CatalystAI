@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -f catalystai.db)",
+      "Bash(python seed.py)",
+      "Bash(python3 seed.py)",
+      "Read(//Users/muthuraj/.pyenv/versions/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(/Users/muthuraj/.pyenv/versions/3.12.3/bin/pip show *)",
+      "Bash(pip3 show *)",
+      "Bash(/opt/homebrew/bin/pip3 show *)",
+      "Bash(pip3 install *)",
+      "Bash(uvicorn app.main:app --port 8001)",
+      "Bash(curl -s http://127.0.0.1:8001/api/reactions/)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Reactions: {len\\(d\\)}'\\); [print\\(f'  {r[\\\\\"name\\\\\"]}'\\) for r in d]\")",
+      "Bash(curl -s http://127.0.0.1:8001/api/catalysts/)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Total catalysts: {len\\(d\\)}'\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Compatible catalysts: {len\\(d\\)}'\\); [print\\(f'  {c[\\\\\"name\\\\\"]}'\\) for c in d]\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
+      "Bash(curl -s http://127.0.0.1:8001/api/discovery/run/2ac8c772-8461-4421-a470-e5f3959c75a3/result)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -X POST http://127.0.0.1:8001/api/discovery/run -H 'Content-Type: application/json' -d '{\"project_id\":\"default-project\",\"reaction_text\":\"CO₂ → Methanol \\(direct\\)\",\"temperature_c\":250,\"pressure_bar\":50,\"cost_weight\":60,\"sustainability_score\":92,\"mode\":\"catalysis\"}')",
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(npx --yes typescript tsc --noEmit)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(npm install *)",
+      "Bash(node_modules/.bin/vite build *)"
+    ]
+  }
+}

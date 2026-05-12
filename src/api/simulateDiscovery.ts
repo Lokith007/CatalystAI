@@ -1,19 +1,37 @@
 import { buildMockResult, delay } from "../lib/mockDiscovery";
-import type { DiscoveryInput, DiscoveryResult, PipelineStep } from "../types/discovery";
+import type { DiscoveryInput, DiscoveryResult, PipelineStep, ReactionSummary } from "../types/discovery";
 
 export type ProgressCallback = (step: PipelineStep) => void;
 
 const API = import.meta.env.VITE_API_URL ?? "https://backend-catalyst.onrender.com";
 
+export async function fetchReactions(): Promise<ReactionSummary[]> {
+  try {
+    const res = await fetch(`${API}/api/reactions/`);
+    if (!res.ok) throw new Error("API failed");
+    const data = await res.json();
+    return data.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      defaultTempC: r.default_temp_c,
+      defaultPressureBar: r.default_pressure_bar,
+      defaultCostWeight: r.default_cost_weight,
+      defaultSustainability: r.default_sustainability,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function startDiscoveryRun(input: DiscoveryInput): Promise<string> {
   try {
     const res = await fetch(`${API}/api/discovery/run`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         project_id: "default-project",
+        reaction_id: input.reactionId ?? null,
         reaction_text: input.reaction,
         temperature_c: input.temperatureC,
         pressure_bar: input.pressureBar,
@@ -58,7 +76,7 @@ export async function pollRunStatus(
         const result = await fetch(`${API}/api/discovery/run/${runId}/result`);
         if (!result.ok) throw new Error("API failed");
         const raw = await result.json();
-        
+
         return {
           known: raw.known.map((k: any) => ({
             id: k.id,
@@ -66,11 +84,15 @@ export async function pollRunStatus(
             type: k.entity_type,
             knownActivity: k.known_activity,
             knownSelectivity: k.known_selectivity,
+            knownStability: k.known_stability,
             notes: k.notes,
+            composition: k.composition ?? undefined,
           })),
           candidates: raw.candidates.map((c: any) => ({
             id: c.id,
             name: c.name,
+            description: c.description,
+            composition: c.composition ?? undefined,
             predictedActivity: c.predicted_activity,
             predictedSelectivity: c.predicted_selectivity,
             predictedStability: c.predicted_stability,
@@ -85,16 +107,16 @@ export async function pollRunStatus(
       }
       await new Promise(r => setTimeout(r, 500));
     } catch (e) {
-       console.warn("Backend unavailable during polling, using mock data", e);
-       onProgress("retrieval");
-       await delay(500);
-       onProgress("generation");
-       await delay(500);
-       onProgress("prediction");
-       await delay(500);
-       const result = buildMockResult(input);
-       onProgress("complete");
-       return result;
+      console.warn("Backend unavailable during polling, using mock data", e);
+      onProgress("retrieval");
+      await delay(500);
+      onProgress("generation");
+      await delay(500);
+      onProgress("prediction");
+      await delay(500);
+      const result = buildMockResult(input);
+      onProgress("complete");
+      return result;
     }
   }
 }

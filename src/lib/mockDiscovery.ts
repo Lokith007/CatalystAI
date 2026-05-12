@@ -9,43 +9,43 @@ import type {
 const KNOWN_POOL: KnownEntity[] = [
   {
     id: "k1",
-    name: "Cu-Zn/Al₂O₃ (HT)",
+    name: "Cu/ZnO/Al₂O₃",
     type: "catalyst",
-    knownActivity: 78,
-    knownSelectivity: 71,
-    notes: "Methanol synthesis; industrial baseline.",
+    knownActivity: 82,
+    knownSelectivity: 74,
+    knownStability: 85,
+    notes: "Industrial methanol synthesis catalyst.",
+    composition: { Cu: 2, Zn: 1, Al: 2, O: 5 },
   },
   {
     id: "k2",
-    name: "MoS₂ edge sites",
+    name: "In₂O₃/ZrO₂",
     type: "catalyst",
-    knownActivity: 65,
-    knownSelectivity: 82,
-    notes: "HDS analog; tunable edge density.",
+    knownActivity: 71,
+    knownSelectivity: 88,
+    knownStability: 76,
+    notes: "High methanol selectivity from CO₂.",
+    composition: { In: 2, Zr: 1, O: 5 },
   },
   {
     id: "k3",
-    name: "ADH7 (yeast)",
-    type: "enzyme",
-    knownActivity: 72,
-    knownSelectivity: 88,
-    notes: "Ethanol oxidation; cofactor dependent.",
+    name: "Co/Al₂O₃",
+    type: "catalyst",
+    knownActivity: 85,
+    knownSelectivity: 76,
+    knownStability: 80,
+    notes: "Cobalt-based Fischer-Tropsch catalyst.",
+    composition: { Co: 1, Al: 2, O: 3 },
   },
   {
     id: "k4",
-    name: "MeOH → olefins (MTO)",
-    type: "pathway",
-    knownActivity: 81,
-    knownSelectivity: 69,
-    notes: "Zeolite-coupled carbene pool.",
-  },
-  {
-    id: "k5",
-    name: "Fe–N–C ORR",
+    name: "Ni/Al₂O₃",
     type: "catalyst",
-    knownActivity: 70,
-    knownSelectivity: 76,
-    notes: " PGM-free oxygen reduction.",
+    knownActivity: 84,
+    knownSelectivity: 92,
+    knownStability: 78,
+    notes: "Classic Sabatier methanation catalyst.",
+    composition: { Ni: 1, Al: 2, O: 3 },
   },
 ];
 
@@ -70,14 +70,29 @@ function pickUncertainty(confidence: number): AICandidate["uncertainty"] {
   return "high";
 }
 
-function pickBadge(
-  activity: number,
-  stability: number
-): AICandidate["badge"] {
+function pickBadge(activity: number, stability: number): AICandidate["badge"] {
   if (activity >= 82 && stability >= 75) return "High";
   if (activity >= 68 && stability >= 60) return "Medium";
   return "Experimental";
 }
+
+const MOCK_MUTATIONS = [
+  {
+    suffix: " -K promoted",
+    description: "K promoter suppresses competing side reactions by tuning surface basicity",
+    compositionMod: (c: Record<string, number>) => ({ ...c, K: 1 }),
+  },
+  {
+    suffix: "/ZrO₂",
+    description: "ZrO₂ support provides strong metal-support interaction enhancing stability",
+    compositionMod: (c: Record<string, number>) => ({ ...c, Zr: 1 }),
+  },
+  {
+    suffix: " (single-atom)",
+    description: "Single-atom dispersion maximizes atom utilization and exposes uniform active sites",
+    compositionMod: (c: Record<string, number>) => c,
+  },
+];
 
 export function buildMockResult(input: DiscoveryInput): DiscoveryResult {
   const seed = hashStr(
@@ -99,35 +114,25 @@ export function buildMockResult(input: DiscoveryInput): DiscoveryResult {
     ),
   }));
 
-  const names =
-    [
-      "Single-atom Co–N₄ variant",
-      "Sulfided Ni–Mo/W edge ensemble",
-      "Zeolite-confined carbene relay",
-      "Perovskite B-site substituted",
-      "Liquid alloy interfacial site",
-    ];
-
-  const candidates: AICandidate[] = names.map((name, i) => {
+  const candidates: AICandidate[] = known.slice(0, 3).map((parent, i) => {
+    const mut = MOCK_MUTATIONS[i % MOCK_MUTATIONS.length];
     const r1 = pseudoRandom(seed, 20 + i);
     const r2 = pseudoRandom(seed, 30 + i);
     const r3 = pseudoRandom(seed, 40 + i);
-    const base =
-      55 +
-      sus * 22 +
-      (input.costWeight < 40 ? 6 : input.costWeight > 70 ? -4 : 0);
+    const base = 55 + sus * 22 + (input.costWeight < 40 ? 6 : input.costWeight > 70 ? -4 : 0);
+
     const predictedActivity = clamp(
-      Math.round(base + r1 * 28 + (input.temperatureC > 350 ? 4 : 0)),
+      Math.round(base + r1 * 20 + (input.temperatureC > 350 ? 4 : 0)),
       38,
       96
     );
     const predictedSelectivity = clamp(
-      Math.round(60 + r2 * 32 - (input.pressureBar > 40 ? 3 : 0)),
+      Math.round(parent.knownSelectivity + (r2 - 0.5) * 14),
       42,
       97
     );
     const predictedStability = clamp(
-      Math.round(52 + r3 * 38 + 5),
+      Math.round(parent.knownStability + r3 * 10 - 5),
       40,
       96
     );
@@ -140,14 +145,16 @@ export function buildMockResult(input: DiscoveryInput): DiscoveryResult {
     const badge = pickBadge(predictedActivity, predictedStability);
     const activeLearningHint =
       uncertainty === "high"
-        ? "High uncertainty → high information gain if tested."
+        ? "High uncertainty — high information gain if tested experimentally."
         : uncertainty === "medium"
           ? "Moderate epistemic uncertainty on stability branch."
           : undefined;
 
     return {
       id: `ai-${i + 1}`,
-      name,
+      name: `${parent.name}${mut.suffix}`,
+      description: mut.description,
+      composition: parent.composition ? mut.compositionMod(parent.composition) : undefined,
       predictedActivity,
       predictedSelectivity,
       predictedStability,
@@ -158,20 +165,36 @@ export function buildMockResult(input: DiscoveryInput): DiscoveryResult {
     };
   });
 
+  const ELEMENT_COST: Record<string, number> = {
+    Fe: 5, Ni: 12, Cu: 15, Zn: 10, Al: 8, Si: 3,
+    Co: 35, Pd: 88, Pt: 95, Ru: 82, Rh: 92, Au: 90,
+    In: 45, Ga: 40, Zr: 22, Ce: 25,
+  };
+  function costFromComp(comp: Record<string, number> | undefined, _name: string): number {
+    if (comp) {
+      const total = Object.entries(comp).reduce(
+        (s, [el, amt]) => s + (ELEMENT_COST[el] ?? 30) * amt, 0
+      );
+      const count = Object.values(comp).reduce((s, v) => s + v, 0);
+      return Math.min(95, total / Math.max(count, 1));
+    }
+    return 30;
+  }
+
   const pareto: ParetoPoint[] = [
     ...known.map((k, i) => ({
       id: k.id,
       name: k.name,
-      yield: clamp(k.knownActivity + pseudoRandom(seed, 100 + i) * 8, 45, 92),
-      cost: clamp(35 + pseudoRandom(seed, 110 + i) * 55, 20, 95),
-      stability: k.knownSelectivity,
+      yield: clamp(k.knownActivity * 0.88 + pseudoRandom(seed, 100 + i) * 4, 35, 95),
+      cost: costFromComp(k.composition, k.name),
+      stability: k.knownStability,
       source: "known" as const,
     })),
-    ...candidates.map((c, i) => ({
+    ...candidates.map((c, _i) => ({
       id: c.id,
       name: c.name,
-      yield: c.predictedActivity * 0.92 + pseudoRandom(seed, 200 + i) * 5,
-      cost: clamp(25 + pseudoRandom(seed, 210 + i) * 60, 15, 90),
+      yield: clamp(c.predictedActivity * 0.90, 35, 95),
+      cost: costFromComp(c.composition, c.name),
       stability: c.predictedStability,
       source: "ai" as const,
     })),

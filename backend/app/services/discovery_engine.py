@@ -1,10 +1,11 @@
-"""Discovery engine — the real pipeline replacing mockDiscovery.ts.
+"""Chemistry-aware discovery engine.
 
-For now this uses the same deterministic logic as the original frontend mock,
-but structured so you can swap in real ML models later without changing the API.
+Replaces the original mock pipeline with real reaction matching,
+catalyst scoring via the M2M compat table, deterministic AI candidate
+generation via catalyst_mutations, and element-cost-based Pareto points.
 """
 
-import math
+import re
 import hashlib
 from datetime import datetime, timezone
 
@@ -13,21 +14,18 @@ from sqlalchemy.orm import Session
 from ..models.catalyst import Catalyst
 from ..models.candidate import Candidate
 from ..models.discovery_run import DiscoveryRun
+from .catalyst_mutations import apply_mutation
+from .element_costs import estimate_cost_index
 
 
-# ---------- helpers (ported from mockDiscovery.ts) ----------
+# ──────────────────────────── helpers ────────────────────────────────────────
 
 def _clamp(n: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, n))
 
 
 def _hash_str(s: str) -> int:
-    return int(hashlib.md5(s.encode()).hexdigest(), 16) % (10**9)
-
-
-def _pseudo_random(seed: int, i: int) -> float:
-    x = math.sin(seed * 9999 + i * 777) * 10000
-    return x - math.floor(x)
+    return int(hashlib.md5(s.encode()).hexdigest(), 16) % (10 ** 9)
 
 
 def _pick_uncertainty(confidence: float) -> str:
@@ -46,113 +44,188 @@ def _pick_badge(activity: float, stability: float) -> str:
     return "Experimental"
 
 
-# ---------- candidate name pools ----------
+# ──────────────────────────── reaction matching ───────────────────────────────
 
-CATALYSIS_NAMES = [
-    "Single-atom Co–N₄ variant",
-    "Sulfided Ni–Mo/W edge ensemble",
-    "Zeolite-confined carbene relay",
-    "Perovskite B-site substituted",
-    "Liquid alloy interfacial site",
-]
-
-SYNBIO_NAMES = [
-    "Synthase chimera v3",
-    "Rerouted NADPH shuttle",
-    "Surface-displayed oxidoreductase",
-    "CRISPRi-tuned pathway node",
-    "De novo pocket scaffold X1",
-]
+def _normalize(text: str) -> str:
+    """Lowercase, strip unicode subscripts, remove punctuation."""
+    text = text.lower().strip()
+    subs = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+    text = text.translate(subs)
+    text = re.sub(r"[→⇒\-/(),]", " ", text)
+    return text
 
 
-# ---------- main pipeline ----------
+def _reaction_score(input_norm: str, reaction) -> int:
+    score = 0
+    rxn_norm = _normalize(reaction.name)
+
+    # Exact normalized match
+    if input_norm == rxn_norm:
+        return 200
+
+    # Substring containment
+    if input_norm in rxn_norm or rxn_norm in input_norm:
+        score += 50
+
+    # Token overlap
+    input_tokens = set(input_norm.split())
+    rxn_tokens = set(rxn_norm.split())
+    overlap = len(input_tokens & rxn_tokens)
+    score += overlap * 12
+
+    # Category keyword
+    if reaction.category and reaction.category.replace("-", " ") in input_norm:
+        score += 20
+
+    # Tag matching
+    for tag in (reaction.tags or []):
+        tag_norm = _normalize(tag)
+        if any(t in input_norm for t in tag_norm.split()):
+            score += 15
+
+    # Species matching
+    for sp in (reaction.input_species or []) + (reaction.output_species or []):
+        sp_norm = _normalize(sp)
+        if sp_norm and sp_norm in input_norm:
+            score += 25
+
+    return score
+
+
+def _match_reaction(reaction_text: str, db: Session):
+    from ..models.reaction import Reaction
+
+    # Exact match first
+    exact = db.query(Reaction).filter(Reaction.name == reaction_text).first()
+    if exact:
+        return exact
+
+    all_reactions = db.query(Reaction).all()
+    if not all_reactions:
+        return None
+
+    norm = _normalize(reaction_text)
+    best_score = 0
+    best_reaction = None
+
+    for rxn in all_reactions:
+        score = _reaction_score(norm, rxn)
+        if score > best_score:
+            best_score = score
+            best_reaction = rxn
+
+    return best_reaction if best_score >= 20 else None
+
+
+# ──────────────────────────── catalyst scoring ───────────────────────────────
+
+def _temp_overlap(cat, temp_c: float) -> float:
+    if cat.temperature_min is None or cat.temperature_max is None:
+        return 0.4  # partial credit when unknown
+    if cat.temperature_min <= temp_c <= cat.temperature_max:
+        return 1.0
+    dist = min(abs(temp_c - cat.temperature_min), abs(temp_c - cat.temperature_max))
+    if dist < 80:
+        return 0.5
+    return 0.0
+
+
+def _pressure_overlap(cat, pressure_bar: float) -> float:
+    if cat.pressure_min is None or cat.pressure_max is None:
+        return 0.4
+    if cat.pressure_min <= pressure_bar <= cat.pressure_max:
+        return 1.0
+    dist = min(abs(pressure_bar - cat.pressure_min), abs(pressure_bar - cat.pressure_max))
+    if dist < 20:
+        return 0.5
+    return 0.0
+
+
+def _score_catalyst(cat, run, compat_ids: set) -> float:
+    # Compatibility score (0–40)
+    compat = 40.0 if cat.id in compat_ids else 0.0
+
+    # Operating condition overlap (0–30)
+    cond = (_temp_overlap(cat, run.temperature_c) * 15
+            + _pressure_overlap(cat, run.pressure_bar) * 15)
+
+    # Performance baseline (0–30)
+    perf = (cat.known_activity * 0.4
+            + cat.known_selectivity * 0.35
+            + cat.known_stability * 0.25) * 0.3
+
+    return compat + cond + perf
+
+
+# ──────────────────────────── main pipeline ──────────────────────────────────
 
 def run_discovery_pipeline(run: DiscoveryRun, db: Session) -> None:
-    """Execute the full discovery pipeline synchronously.
-
-    Updates the run status as it progresses and creates candidates in the DB.
-    """
     run.started_at = datetime.now(timezone.utc)
 
-    # --- Step 1: RETRIEVAL ---
+    # ── Step 1: RETRIEVAL ─────────────────────────────────────────────────────
     run.status = "retrieval"
     db.commit()
 
-    known_catalysts = db.query(Catalyst).all()
+    reaction_obj = _match_reaction(run.reaction_text, db)
+    if reaction_obj:
+        run.reaction_id = reaction_obj.id
+        db.commit()
 
-    # --- Step 2: GENERATION ---
+    compat_ids: set = set()
+    if reaction_obj:
+        compat_ids = {c.id for c in reaction_obj.compatible_catalysts}
+
+    all_catalysts = db.query(Catalyst).all()
+    scored = sorted(
+        [((_score_catalyst(c, run, compat_ids)), c) for c in all_catalysts],
+        key=lambda x: x[0],
+        reverse=True,
+    )
+
+    # Top 8 become the "known" results shown in the UI
+    known_catalysts = [c for _, c in scored[:8]]
+
+    # ── Step 2: GENERATION ───────────────────────────────────────────────────
     run.status = "generation"
     db.commit()
 
-    seed = _hash_str(f"{run.reaction_text}|{run.mode}|{run.temperature_c}|{run.pressure_bar}")
-    mode_bias = 4 if run.mode == "synbio" else -2
-    sus = run.sustainability / 100
-    names = SYNBIO_NAMES if run.mode == "synbio" else CATALYSIS_NAMES
-
+    parent_pool = known_catalysts[:3] if len(known_catalysts) >= 3 else known_catalysts
     candidates = []
-    for i, name in enumerate(names):
-        r1 = _pseudo_random(seed, 20 + i)
-        r2 = _pseudo_random(seed, 30 + i)
-        r3 = _pseudo_random(seed, 40 + i)
-        base = 55 + sus * 22 + mode_bias + (6 if run.cost_weight < 40 else -4 if run.cost_weight > 70 else 0)
 
-        predicted_activity = _clamp(round(base + r1 * 28 + (4 if run.temperature_c > 350 else 0)), 38, 96)
-        predicted_selectivity = _clamp(round(60 + r2 * 32 - (3 if run.pressure_bar > 40 else 0)), 42, 97)
-        predicted_stability = _clamp(round(52 + r3 * 38 + (5 if run.mode == "catalysis" else 2)), 40, 96)
-        confidence = _clamp(round(58 + _pseudo_random(seed, 50 + i) * 32), 48, 92)
+    for pos, parent in enumerate(parent_pool):
+        mut = apply_mutation(parent, reaction_obj, run, pos)
+        confidence = mut["confidence"]
         uncertainty = _pick_uncertainty(confidence)
-        badge = _pick_badge(predicted_activity, predicted_stability)
+        badge = _pick_badge(mut["predicted_activity"], mut["predicted_stability"])
 
         hint = None
         if uncertainty == "high":
-            hint = "High uncertainty → high information gain if tested."
+            hint = "High uncertainty — high information gain if tested experimentally."
         elif uncertainty == "medium":
             hint = "Moderate epistemic uncertainty on stability branch."
 
         candidate = Candidate(
             discovery_run_id=run.id,
-            name=name,
-            description=f"AI-generated candidate for {run.reaction_text}",
-            predicted_activity=predicted_activity,
-            predicted_selectivity=predicted_selectivity,
-            predicted_stability=predicted_stability,
+            name=mut["name"],
+            description=mut["description"],
+            composition=mut["composition"],
+            predicted_activity=mut["predicted_activity"],
+            predicted_selectivity=mut["predicted_selectivity"],
+            predicted_stability=mut["predicted_stability"],
             confidence=confidence,
             uncertainty=uncertainty,
             badge=badge,
             active_learning_hint=hint,
-            generative_model="mock-v1",
+            generative_model="chemistry-heuristic-v2",
         )
         candidates.append(candidate)
 
-    # --- Step 3: PREDICTION (scoring & Pareto) ---
+    # ── Step 3: PREDICTION ───────────────────────────────────────────────────
     run.status = "prediction"
     db.commit()
 
-    # Build Pareto points from known + AI candidates
-    pareto_points = []
-    for j, k in enumerate(known_catalysts):
-        pareto_points.append({
-            "id": k.id,
-            "name": k.name,
-            "yield": round(_clamp(k.known_activity + _pseudo_random(seed, 100 + j) * 8, 45, 92), 1),
-            "cost": round(_clamp(35 + _pseudo_random(seed, 110 + j) * 55, 20, 95), 1),
-            "stability": k.known_selectivity,
-            "source": "known",
-        })
-    for j, c in enumerate(candidates):
-        pareto_points.append({
-            "id": f"ai-{j + 1}",
-            "name": c.name,
-            "yield": round(c.predicted_activity * 0.92 + _pseudo_random(seed, 200 + j) * 5, 1),
-            "cost": round(_clamp(25 + _pseudo_random(seed, 210 + j) * 60, 15, 90), 1),
-            "stability": c.predicted_stability,
-            "source": "ai",
-        })
-
-    from ..models.reaction import Reaction
-    reaction_obj = db.query(Reaction).filter(Reaction.name == run.reaction_text).first()
-
-    # Pathway energy diagram
+    # Pathway steps — use matched reaction template, perturbed by run seed
+    seed = _hash_str(f"{run.reaction_text}|{run.mode}|{run.temperature_c}|{run.pressure_bar}")
     if reaction_obj and reaction_obj.pathway_template:
         pathway_steps = []
         for i, step in enumerate(reaction_obj.pathway_template):
@@ -167,25 +240,34 @@ def run_discovery_pipeline(run: DiscoveryRun, db: Session) -> None:
             {"label": "Product desorption", "energy": 12 + (seed % 8)},
         ]
 
-    # Dynamically prefix candidate names if reaction is known
-    prefix = ""
-    if reaction_obj and reaction_obj.output_species and len(reaction_obj.output_species) > 0:
-        target = reaction_obj.output_species[0]
-        # just a short tag like "[NH₃] "
-        if len(target) > 8: target = target[:6] + "…"
-        prefix = f"[{target}] "
+    # Pareto points — use actual catalyst scores + element-cost data
+    pareto_points = []
+    for j, (score, cat) in enumerate(scored[:8]):
+        yield_val = _clamp(cat.known_activity * 0.88 + (score % 5) * 0.5, 35, 95)
+        cost_val = estimate_cost_index(cat.composition, cat.name)
+        pareto_points.append({
+            "id": cat.id,
+            "name": cat.name,
+            "yield": round(yield_val, 1),
+            "cost": round(cost_val, 1),
+            "stability": round(cat.known_stability, 1),
+            "source": "known",
+        })
 
-    # update candidate names retrospectively (they were created in Step 2)
-    for c in candidates:
-        if not c.name.startswith("["):
-            c.name = f"{prefix}{c.name}"
+    for j, c in enumerate(candidates):
+        parent_score = scored[j][0] if j < len(scored) else 0
+        yield_val = _clamp(c.predicted_activity * 0.90, 35, 95)
+        cost_val = estimate_cost_index(c.composition, c.name)
+        pareto_points.append({
+            "id": f"ai-{j + 1}",
+            "name": c.name,
+            "yield": round(yield_val, 1),
+            "cost": round(cost_val, 1),
+            "stability": round(c.predicted_stability, 1),
+            "source": "ai",
+        })
 
-    # Also update pareto names for ai candidates
-    for p in pareto_points:
-        if p["source"] == "ai" and not p["name"].startswith("["):
-            p["name"] = f"{prefix}{p['name']}"
-
-    # --- Step 4: COMPLETE ---
+    # ── Step 4: COMPLETE ─────────────────────────────────────────────────────
     db.add_all(candidates)
     run.pareto_points = pareto_points
     run.pathway_steps = pathway_steps
